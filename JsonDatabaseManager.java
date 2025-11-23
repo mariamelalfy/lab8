@@ -9,8 +9,13 @@ import java.nio.file.Paths;
 import java.text.ParseException;
 import java.text.SimpleDateFormat;
 import java.util.*;
-import model.*;
+import model.Course;
 import model.Course.ApprovalStatus;
+import model.Instructor;
+import model.Lesson;
+import model.Student;
+import model.User;
+import model.Admin;
 import org.json.JSONException;
 
 public class JsonDatabaseManager {
@@ -18,7 +23,6 @@ public class JsonDatabaseManager {
     private static JsonDatabaseManager instance;
     private static final String USERS_FILE = "database/users.json";
     private static final String COURSES_FILE = "database/courses.json";
-    private static final String QUIZZES_FILE = "database/quizzes.json";  // Combined quizzes + attempts
     private SimpleDateFormat dateFormat = new SimpleDateFormat("yyyy-MM-dd HH:mm:ss");
 
    
@@ -37,24 +41,16 @@ public class JsonDatabaseManager {
                 // Return appropriate empty structure based on file type
                 if (path.contains("users")) {
                     return "{\"users\":[]}";
-                } else if (path.contains("courses")) {
-                    return "{\"courses\":[]}";
-                } else if (path.contains("quizzes")) {
-                    return "{\"quizzes\":[],\"attempts\":[]}";
                 } else {
-                    return "{}";
+                    return "{\"courses\":[]}";
                 }
             }
             return new String(Files.readAllBytes(Paths.get(path)));
         } catch (IOException e) {
             if (path.contains("users")) {
                 return "{\"users\":[]}";
-            } else if (path.contains("courses")) {
-                return "{\"courses\":[]}";
-            } else if (path.contains("quizzes")) {
-                return "{\"quizzes\":[],\"attempts\":[]}";
             } else {
-                return "{}";
+                return "{\"courses\":[]}";
             }
         }
     }
@@ -356,325 +352,6 @@ public class JsonDatabaseManager {
         writeFile(COURSES_FILE, root.toString(4));
     }
 
-    // ============================================================
-    // QUIZ METHODS (stored in quizzes.json)
-    // ============================================================
-    
-    public List<Quiz> loadQuizzes() {
-        List<Quiz> quizzes = new ArrayList<>();
-
-        try {
-            String json = readFile(QUIZZES_FILE);
-            JSONObject root = new JSONObject(json);
-
-            if (!root.has("quizzes")) {
-                return quizzes;
-            }
-
-            JSONArray arr = root.getJSONArray("quizzes");
-
-            for (int i = 0; i < arr.length(); i++) {
-                JSONObject quizObj = arr.getJSONObject(i);
-
-                Quiz quiz = new Quiz(
-                        quizObj.getInt("quizId"),
-                        quizObj.getInt("passingScore"),
-                        quizObj.getBoolean("required")
-                );
-
-                // Set additional fields
-                quiz.setCourseID(quizObj.getInt("courseId"));
-                quiz.setLessonID(quizObj.getInt("lessonId"));
-
-                // Load questions
-                if (quizObj.has("questions")) {
-                    JSONArray questionsArr = quizObj.getJSONArray("questions");
-                    List<Question> questions = new ArrayList<>();
-
-                    for (int j = 0; j < questionsArr.length(); j++) {
-                        JSONObject qobj = questionsArr.getJSONObject(j);
-
-                        Question question = new Question(
-                                qobj.getInt("questionId"),
-                                qobj.getString("questionText"),
-                                qobj.getString("optionA"),
-                                qobj.getString("optionB"),
-                                qobj.getString("optionC"),
-                                qobj.getString("optionD"),
-                                qobj.getString("correctAnswer"),
-                                qobj.has("explanation") && !qobj.isNull("explanation")
-                                        ? qobj.getString("explanation") : null
-                        );
-
-                        questions.add(question);
-                    }
-
-                    quiz.setQuestions(questions);
-                }
-
-                quizzes.add(quiz);
-            }
-
-        } catch (JSONException e) {
-            e.printStackTrace();
-        }
-
-        return quizzes;
-    }
-
-    private void saveQuizzesAndAttempts(List<Quiz> quizzes, List<QuizAttempt> attempts) {
-        JSONObject root = new JSONObject();
-
-        // Save quizzes
-        JSONArray quizzesArr = new JSONArray();
-        for (Quiz quiz : quizzes) {
-            JSONObject obj = new JSONObject();
-
-            obj.put("quizId", quiz.getQuizId());
-            obj.put("courseId", quiz.getCourseID());
-            obj.put("lessonId", quiz.getLessonID());
-            obj.put("passingScore", quiz.getPassingScore());
-            obj.put("required", quiz.isRequired());
-
-            // Save questions
-            JSONArray questionsArr = new JSONArray();
-            for (Question q : quiz.getQuestions()) {
-                JSONObject qobj = new JSONObject();
-                qobj.put("questionId", q.getQuestionID());
-                qobj.put("questionText", q.getQuestionText());
-                qobj.put("optionA", q.getOptionA());
-                qobj.put("optionB", q.getOptionB());
-                qobj.put("optionC", q.getOptionC());
-                qobj.put("optionD", q.getOptionD());
-                qobj.put("correctAnswer", q.getCorrectAnswer());
-                qobj.put("explanation", q.getExplanation());
-
-                questionsArr.put(qobj);
-            }
-
-            obj.put("questions", questionsArr);
-            quizzesArr.put(obj);
-        }
-        root.put("quizzes", quizzesArr);
-
-        // Save attempts
-        JSONArray attemptsArr = new JSONArray();
-        for (QuizAttempt a : attempts) {
-            JSONObject obj = new JSONObject();
-
-            obj.put("attemptId", a.getAttemptId());
-            obj.put("studentId", a.getStudentId());
-            obj.put("quizId", a.getQuizId());
-            obj.put("lessonId", a.getLessonId());
-            obj.put("courseId", a.getCourseId());
-            obj.put("studentAnswers", new JSONArray(a.getStudentAnswers()));
-            obj.put("score", a.getScore());
-            obj.put("passed", a.isPassed());
-            obj.put("attemptDate", a.getAttemptDate().toString());
-
-            attemptsArr.put(obj);
-        }
-        root.put("attempts", attemptsArr);
-
-        writeFile(QUIZZES_FILE, root.toString(4));
-    }
-
-    public void saveQuizzes(List<Quiz> quizzes) {
-        List<QuizAttempt> attempts = loadQuizAttempts();
-        saveQuizzesAndAttempts(quizzes, attempts);
-    }
-
-    public void saveQuiz(Quiz quiz) {
-        List<Quiz> quizzes = loadQuizzes();
-
-        // Remove existing quiz with same ID (if any)
-        quizzes.removeIf(q -> q.getQuizId() == quiz.getQuizId());
-
-        // Add the new/updated quiz
-        quizzes.add(quiz);
-
-        // Save all
-        saveQuizzes(quizzes);
-    }
-
-    public Quiz getQuizById(int quizId) {
-        List<Quiz> quizzes = loadQuizzes();
-        for (Quiz q : quizzes) {
-            if (q.getQuizId() == quizId) {
-                return q;
-            }
-        }
-        return null;
-    }
-    
-    public Quiz getQuizByCourseAndLessonId(int courseId, int lessonId) {
-    List<Quiz> quizzes = loadQuizzes();
-    for (Quiz q : quizzes) {
-        if (q.getCourseID() == courseId && q.getLessonID() == lessonId) {
-            return q;
-        }
-    }
-    return null;
-}
-
-
-    public List<Quiz> getQuizzesForCourse(int courseID) {
-        List<Quiz> result = new ArrayList<>();
-        List<Quiz> allQuizzes = loadQuizzes();
-
-        for (Quiz q : allQuizzes) {
-            if (q.getCourseID() == courseID) {
-                result.add(q);
-            }
-        }
-
-        return result;
-    }
-
-    public boolean deleteQuiz(int quizId) {
-        List<Quiz> quizzes = loadQuizzes();
-        boolean removed = quizzes.removeIf(q -> q.getQuizId() == quizId);
-
-        if (removed) {
-            saveQuizzes(quizzes);
-        }
-
-        return removed;
-    }
-
-    public boolean deleteQuizByLessonId(int lessonID) {
-        List<Quiz> quizzes = loadQuizzes();
-        boolean removed = quizzes.removeIf(q -> q.getLessonID() == lessonID);
-
-        if (removed) {
-            saveQuizzes(quizzes);
-        }
-
-        return removed;
-    }
-
-    public boolean hasQuiz(int courseId, int lessonId) {
-    return getQuizByCourseAndLessonId(courseId, lessonId) != null;
-}
-
-
-    public int generateQuizId() {
-        List<Quiz> quizzes = loadQuizzes();
-        int maxId = 0;
-        for (Quiz q : quizzes) {
-            if (q.getQuizId() > maxId) {
-                maxId = q.getQuizId();
-            }
-        }
-        return maxId + 1;
-    }
-
-    // ============================================================
-    // QUIZ ATTEMPTS METHODS (stored in same quizzes.json file)
-    // ============================================================
-    
-    public List<QuizAttempt> loadQuizAttempts() {
-        List<QuizAttempt> attempts = new ArrayList<>();
-
-        try {
-            String json = readFile(QUIZZES_FILE);
-            JSONObject root = new JSONObject(json);
-
-            if (!root.has("attempts")) {
-                return attempts;
-            }
-
-            JSONArray arr = root.getJSONArray("attempts");
-
-            for (int i = 0; i < arr.length(); i++) {
-                JSONObject obj = arr.getJSONObject(i);
-
-                List<String> answers = new ArrayList<>();
-                JSONArray answersArr = obj.getJSONArray("studentAnswers");
-                for (int j = 0; j < answersArr.length(); j++) {
-                    answers.add(answersArr.getString(j));
-                }
-
-                QuizAttempt a = new QuizAttempt(
-                        obj.getInt("attemptId"),
-                        obj.getString("studentId"),
-                        obj.getInt("quizId"),
-                        obj.getInt("lessonId"),
-                        obj.getInt("courseId"),
-                        answers,
-                        obj.getDouble("score"),
-                        obj.getBoolean("passed"),
-                        java.time.Instant.parse(obj.getString("attemptDate"))
-                );
-
-                attempts.add(a);
-            }
-
-        } catch (JSONException e) {
-            e.printStackTrace();
-        }
-
-        return attempts;
-    }
-
-    public void saveQuizAttempts(List<QuizAttempt> attempts) {
-        List<Quiz> quizzes = loadQuizzes();
-        saveQuizzesAndAttempts(quizzes, attempts);
-    }
-
-    public void addQuizAttempt(QuizAttempt attempt) {
-        List<QuizAttempt> list = loadQuizAttempts();
-        list.add(attempt);
-        saveQuizAttempts(list);
-    }
-
-    public List<QuizAttempt> getStudentQuizAttempts(String studentId, int quizId) {
-        List<QuizAttempt> all = loadQuizAttempts();
-        List<QuizAttempt> result = new ArrayList<>();
-
-        for (QuizAttempt a : all) {
-            if (a.getStudentId().equals(studentId) && a.getQuizId() == quizId) {
-                result.add(a);
-            }
-        }
-
-        return result;
-    }
-
-    public boolean hasPassedQuiz(String studentId, int lessonId, int quizId) {
-        List<QuizAttempt> all = loadQuizAttempts();
-
-        for (QuizAttempt a : all) {
-            if (a.getStudentId().equals(studentId)
-                    && a.getLessonId() == lessonId
-                    && a.getQuizId() == quizId
-                    && a.isPassed()) {
-                return true;
-            }
-        }
-
-        return false;
-    }
-
-    public int generateAttemptId() {
-        List<QuizAttempt> attempts = loadQuizAttempts();
-        int maxId = 0;
-        for (QuizAttempt attempt : attempts) {
-            try {
-                int id = attempt.getAttemptId();
-                if (id > maxId) {
-                    maxId = id;
-                }
-            } catch (NumberFormatException e) {
-                // Skip non-numeric IDs
-            }
-        }
-        return maxId + 1;
-    }
-
-    // ============================================================
-    // EXISTING HELPER METHODS
-    // ============================================================
 
     public int generateUserId(List<User> users) {
         int maxId = 0;
@@ -719,9 +396,7 @@ public class JsonDatabaseManager {
         return null;
     }
     
-    // ============================================================
-    // ADMIN FUNCTIONALITY METHODS
-    // ============================================================
+    // ============= NEW METHODS FOR ADMIN FUNCTIONALITY =============
     
     /**
      * Get all courses from database
