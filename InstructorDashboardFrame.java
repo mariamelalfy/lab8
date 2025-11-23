@@ -118,11 +118,11 @@ private void loadMyCourses() {
 private String getStatusDisplay(Course course) {
     switch (course.getApprovalStatus()) {
         case PENDING:
-            return "⏳ PENDING";
+            return "PENDING";
         case APPROVED:
-            return "✓ APPROVED";
+            return "APPROVED";
         case REJECTED:
-            return "✗ REJECTED";
+            return "REJECTED";
         default:
             return "UNKNOWN";
     }
