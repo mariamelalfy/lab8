@@ -52,9 +52,9 @@ public class AnalyticsService {
                 .getOrDefault(String.valueOf(courseId), new ArrayList<>());
             perf.setLessonsCompleted(completedLessons.size());
             
-            // For now, set average quiz score to 0
-            // Team Member 2 will implement quiz tracking
-            perf.setAverageQuizScore(0.0);
+            // Calculate average quiz score
+            double avgQuizScore = calculateAverageQuizScore(studentId, courseId, course);
+            perf.setAverageQuizScore(avgQuizScore);
             
             performanceList.add(perf);
         }
@@ -62,9 +62,45 @@ public class AnalyticsService {
         return performanceList;
     }
     
-    /**
-     * Get overall statistics for a course
-     */
+    private double calculateAverageQuizScore(String studentId, int courseId, Course course) {
+        List<Double> quizScores = new ArrayList<>();
+        
+        // Get all quizzes for this course
+        List<Quiz> courseQuizzes = db.getQuizzesForCourse(courseId);
+        
+        if (courseQuizzes.isEmpty()) {
+            return 0.0;
+        }
+        
+        // For each quiz, get the best score
+        for (Quiz quiz : courseQuizzes) {
+            List<QuizAttempt> attempts = db.getStudentQuizAttempts(studentId, quiz.getQuizId());
+            
+            if (!attempts.isEmpty()) {
+                // Find best score among all attempts
+                double bestScore = 0.0;
+                for (QuizAttempt attempt : attempts) {
+                    if (attempt.getScore() > bestScore) {
+                        bestScore = attempt.getScore();
+                    }
+                }
+                quizScores.add(bestScore);
+            }
+        }
+        
+        // Calculate average of best scores
+        if (quizScores.isEmpty()) {
+            return 0.0;
+        }
+        
+        double sum = 0.0;
+        for (double score : quizScores) {
+            sum += score;
+        }
+        
+        return sum / quizScores.size();
+    }
+    
     public CourseStatistics getCourseStatistics(int courseId) {
         Course course = findCourse(courseId);
         if (course == null) {
@@ -129,11 +165,48 @@ public class AnalyticsService {
             return lessonAverages;
         }
         
-        // For each lesson, calculate average quiz score
+        List<User> users = db.loadUsers();
+        List<Integer> enrolledStudents = course.getEnrolledStudentIDs();
+        
+        // For each lesson with a quiz, calculate average score
         for (Lesson lesson : course.getLessons()) {
-            // TODO: Team Member 2 will implement quiz attempts tracking
-            // For now, return sample data
-            lessonAverages.put(lesson.getLessonTitle(), 0.0);
+            Quiz quiz = lesson.getQuiz();
+            
+            if (quiz != null) {
+                List<Double> allBestScores = new ArrayList<>();
+                
+                // For each enrolled student, get their best score on this quiz
+                for (Integer studentIdInt : enrolledStudents) {
+                    String studentId = String.valueOf(studentIdInt);
+                    List<QuizAttempt> attempts = db.getStudentQuizAttempts(studentId, quiz.getQuizId());
+                    
+                    if (!attempts.isEmpty()) {
+                        // Find best score among all attempts
+                        double bestScore = 0.0;
+                        for (QuizAttempt attempt : attempts) {
+                            if (attempt.getScore() > bestScore) {
+                                bestScore = attempt.getScore();
+                            }
+                        }
+                        allBestScores.add(bestScore);
+                    }
+                }
+                
+                // Calculate average of all students' best scores
+                double average = 0.0;
+                if (!allBestScores.isEmpty()) {
+                    double sum = 0.0;
+                    for (double score : allBestScores) {
+                        sum += score;
+                    }
+                    average = sum / allBestScores.size();
+                }
+                
+                lessonAverages.put(lesson.getLessonTitle(), average);
+            } else {
+                // No quiz for this lesson
+                lessonAverages.put(lesson.getLessonTitle(), 0.0);
+            }
         }
         
         return lessonAverages;
