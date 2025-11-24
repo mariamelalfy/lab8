@@ -82,7 +82,7 @@ public class ChartFrame extends JFrame {
         private String yAxisLabel;          // Label for vertical axis
         
         // Maximum number of students to show on Y-axis
-        private static final double MAX_STUDENTS = 20.0;
+        private static final double MAX_STUDENTS = 100.0;
         
         public BarChartPanel(Map<String, Double> data, String yAxisLabel) {
             this.data = data;
