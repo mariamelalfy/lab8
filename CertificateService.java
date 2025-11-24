@@ -2,7 +2,6 @@ package service;
 
 import database.JsonDatabaseManager;
 import model.*;
-
 import java.util.ArrayList;
 import java.util.List;
 
@@ -18,113 +17,113 @@ public class CertificateService {
     
     // Check if student can get certificate
     public boolean isEligibleForCertificate(String studentId, String courseId) {
-        return tracker.isEligibleForCertificate(studentId, courseId);
+        boolean lessonsComplete = tracker.areAllLessonsCompleted(studentId, courseId);
+        boolean quizzesPassed = tracker.areAllQuizzesPassed(studentId, courseId);
+        return lessonsComplete && quizzesPassed;
     }
     
-    // Generate certificate for a student
+    // Make certificate for student
     public Certificate generateCertificate(String studentId, String courseId) {
-   
+        // Check if eligible
         if (!isEligibleForCertificate(studentId, courseId)) {
-            System.err.println("Student not eligible for certificate");
             return null;
         }
         
-        // Check if certificate already exists
+        // Check if already exists
         Certificate existing = getCertificateForCourse(studentId, courseId);
         if (existing != null) {
-            System.out.println("Certificate already exists");
             return existing;
         }
         
-        // Get student and course info
+        // Get student and course
         Student student = db.findStudent(studentId);
         Course course = db.findCourse(courseId);
         
         if (student == null || course == null) {
-            System.err.println("Student or course not found");
             return null;
         }
         
-        // Get instructor info
-        Instructor instructor = findInstructorById(course.getInstructorID());
-        String instructorName = instructor != null ? 
-            instructor.getUsername() : "Unknown Instructor";
+        // Get instructor
+        List<User> users = db.loadUsers();
+        Instructor instructor = null;
+        for (User u : users) {
+            if (u instanceof Instructor) {
+                if (Integer.parseInt(u.getUserId()) == course.getInstructorID()) {
+                    instructor = (Instructor) u;
+                    break;
+                }
+            }
+        }
         
-        // Calculate average score
-        double avgScore = tracker.calculateAverageScore(studentId, courseId);
+        String instructorName = "Unknown";
+        if (instructor != null) {
+            instructorName = instructor.getUsername();
+        }
         
-        // Generate certificate
+        // Calculate average
+        double avg = tracker.calculateAverageScore(studentId, courseId);
+        
+        // Make certificate
         List<Certificate> allCerts = db.loadCertificates();
-        int newCertId = db.generateCertificateId(allCerts);
+        int maxId = 0;
+        for (Certificate c : allCerts) {
+            if (c.getCertificateID() > maxId) {
+                maxId = c.getCertificateID();
+            }
+        }
+        int newId = maxId + 1;
         
         Certificate cert = new Certificate(
-            newCertId,
+            newId,
             Integer.parseInt(studentId),
             Integer.parseInt(courseId),
             student.getUsername(),
             course.getCourseTitle(),
             instructorName,
-            avgScore
+            avg
         );
         
         // Save certificate
         db.saveCertificate(cert);
         
-        // Add to student's certificate list and save
-    
-        List<User> users = db.loadUsers();
-        for (User u : users) {
-            if (u instanceof Student && u.getUserId().equals(studentId)) {
-                ((Student) u).addCertificate(String.valueOf(newCertId));
+        // Add to student
+        List<User> allUsers = db.loadUsers();
+        for (User u : allUsers) {
+            if (u.getUserId().equals(studentId)) {
+                if (u instanceof Student) {
+                    ((Student) u).addCertificate(String.valueOf(newId));
+                }
                 break;
             }
         }
-        db.saveUsers(users);
+        db.saveUsers(allUsers);
         
         return cert;
     }
     
-    // Get all certificates for a student
+    // Get all certificates for student
     public List<Certificate> getStudentCertificates(String studentId) {
-        List<Certificate> allCerts = db.loadCertificates();
-        List<Certificate> studentCerts = new ArrayList<>();
+        List<Certificate> all = db.loadCertificates();
+        List<Certificate> mine = new ArrayList<>();
         
-        int studentIdInt = Integer.parseInt(studentId);
-        for (Certificate cert : allCerts) {
-            if (cert.getStudentID() == studentIdInt) {
-                studentCerts.add(cert);
+        int id = Integer.parseInt(studentId);
+        for (Certificate c : all) {
+            if (c.getStudentID() == id) {
+                mine.add(c);
             }
         }
         
-        return studentCerts;
+        return mine;
     }
     
-    // Get certificate for specific course
+    // Get certificate for course
     public Certificate getCertificateForCourse(String studentId, String courseId) {
         List<Certificate> certs = getStudentCertificates(studentId);
-        int courseIdInt = Integer.parseInt(courseId);
+        int cid = Integer.parseInt(courseId);
         
-        for (Certificate cert : certs) {
-            if (cert.getCourseID() == courseIdInt) {
-                return cert;
-            }
-        }
-        return null;
-    }
-    
-    // Get completion progress for display
-    public String getProgressText(String studentId, String courseId) {
-        double percentage = tracker.calculateCompletionPercentage(studentId, courseId);
-        return String.format("%.1f%% Complete", percentage);
-    }
-    
-    // Helper method to find instructor
-    private Instructor findInstructorById(int instructorId) {
-        List<User> users = db.loadUsers();
-        for (User user : users) {
-            if (user instanceof Instructor && 
-                Integer.parseInt(user.getUserId()) == instructorId) {
-                return (Instructor) user;
+        for (Certificate c : certs) {
+            if (c.getCourseID() == cid) {
+                return c;
             }
         }
         return null;
